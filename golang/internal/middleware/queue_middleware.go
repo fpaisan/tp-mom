@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -12,6 +13,34 @@ type WorkQueueMiddleware struct {
 	Connection  *amqp.Connection
 	Channel     *amqp.Channel
 	ConsumerTag string
+}
+
+func NewWorkQueueMiddleware(queueName string, conn *amqp.Connection, channel *amqp.Channel) (*WorkQueueMiddleware, error) {
+	_, err := channel.QueueDeclare(queueName, true, false, false, false, nil)
+	if err != nil {
+		connErr := conn.Close()
+		chErr := channel.Close()
+		err = errors.Join(err, connErr, chErr)
+		return nil, err
+	}
+
+	err = channel.Qos(
+		PREFETCH_COUNT,
+		PREFETCH_SIZE,
+		GLOBAL,
+	)
+	if err != nil {
+		connErr := conn.Close()
+		chErr := channel.Close()
+		err = errors.Join(err, connErr, chErr)
+		return nil, err
+	}
+	return &WorkQueueMiddleware{
+		QueueName:   queueName,
+		Connection:  conn,
+		Channel:     channel,
+		ConsumerTag: "consumer-" + queueName,
+	}, nil
 }
 
 func (q *WorkQueueMiddleware) StartConsuming(callbackFunc func(msg Message, ack func(), nack func())) error {
