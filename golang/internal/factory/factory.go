@@ -25,7 +25,15 @@ func CreateQueueMiddleware(queueName string, connectionSettings m.ConnSettings) 
 }
 
 func CreateExchangeMiddleware(exchange string, keys []string, connectionSettings m.ConnSettings) (m.Middleware, error) {
-	return nil, nil
+	conn, channel, err := connect(connectionSettings)
+	if err != nil {
+		return nil, err
+	}
+	middleware, err := m.NewExchangeMiddleware(exchange, keys, conn, channel)
+	if err != nil {
+		return nil, err
+	}
+	return middleware, nil
 }
 
 func connect(connectionSettings m.ConnSettings) (*amqp.Connection, *amqp.Channel, error) {
