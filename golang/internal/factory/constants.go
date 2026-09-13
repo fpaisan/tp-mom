@@ -1,4 +1,4 @@
-package middleware
+package factory
 
 const (
 	DEFAULT_EXCHANGE   = ""

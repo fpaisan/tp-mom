@@ -1,10 +1,11 @@
-package middleware
+package factory
 
 import (
 	"context"
 	"errors"
 	"time"
 
+	"github.com/7574-sistemas-distribuidos/tp-mom/golang/internal/middleware"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
@@ -20,10 +21,8 @@ type ExchangeMiddleware struct {
 func NewExchangeMiddleware(exchange string, keys []string, conn *amqp.Connection, channel *amqp.Channel) (*ExchangeMiddleware, error) {
 	err := channel.ExchangeDeclare(exchange, DIRECT_EXCHANGE, false, false, false, false, nil)
 	if err != nil {
-		connErr := conn.Close()
-		chErr := channel.Close()
-		err = errors.Join(err, connErr, chErr)
-		return nil, err
+		closeErr := closeResources(conn, channel)
+		return nil, errors.Join(err, closeErr)
 	}
 
 	err = channel.Qos(
@@ -32,10 +31,8 @@ func NewExchangeMiddleware(exchange string, keys []string, conn *amqp.Connection
 		GLOBAL,
 	)
 	if err != nil {
-		connErr := conn.Close()
-		chErr := channel.Close()
-		err = errors.Join(err, connErr, chErr)
-		return nil, err
+		closeErr := closeResources(conn, channel)
+		return nil, errors.Join(err, closeErr)
 	}
 
 	queue, err := channel.QueueDeclare(
@@ -47,10 +44,8 @@ func NewExchangeMiddleware(exchange string, keys []string, conn *amqp.Connection
 		nil,
 	)
 	if err != nil {
-		connErr := conn.Close()
-		chErr := channel.Close()
-		err = errors.Join(err, connErr, chErr)
-		return nil, err
+		closeErr := closeResources(conn, channel)
+		return nil, errors.Join(err, closeErr)
 	}
 
 	for _, key := range keys {
@@ -61,10 +56,8 @@ func NewExchangeMiddleware(exchange string, keys []string, conn *amqp.Connection
 			false,
 			nil)
 		if err != nil {
-			connErr := conn.Close()
-			chErr := channel.Close()
-			err = errors.Join(err, connErr, chErr)
-			return nil, err
+			closeErr := closeResources(conn, channel)
+			return nil, errors.Join(err, closeErr)
 		}
 	}
 	return &ExchangeMiddleware{
@@ -77,12 +70,12 @@ func NewExchangeMiddleware(exchange string, keys []string, conn *amqp.Connection
 	}, nil
 }
 
-func (e *ExchangeMiddleware) StartConsuming(callbackFunc func(msg Message, ack func(), nack func())) error {
+func (e *ExchangeMiddleware) StartConsuming(callbackFunc func(msg middleware.Message, ack func(), nack func())) error {
 	if e.Connection.IsClosed() {
-		return ErrMessageMiddlewareDisconnected
+		return middleware.ErrMessageMiddlewareDisconnected
 	}
 	if e.Channel.IsClosed() {
-		return ErrMessageMiddlewareMessage
+		return middleware.ErrMessageMiddlewareMessage
 	}
 	msgs, err := e.Channel.Consume(
 		e.QueueName,
@@ -94,11 +87,11 @@ func (e *ExchangeMiddleware) StartConsuming(callbackFunc func(msg Message, ack f
 		nil,
 	)
 	if err != nil {
-		return ErrMessageMiddlewareMessage
+		return middleware.ErrMessageMiddlewareMessage
 	}
 
 	for d := range msgs {
-		msg := Message{Body: string(d.Body)}
+		msg := middleware.Message{Body: string(d.Body)}
 		ack := func() {
 			err := d.Ack(false)
 			if err != nil {
@@ -118,20 +111,20 @@ func (e *ExchangeMiddleware) StartConsuming(callbackFunc func(msg Message, ack f
 
 func (e *ExchangeMiddleware) StopConsuming() error {
 	if e.Connection.IsClosed() {
-		return ErrMessageMiddlewareDisconnected
+		return middleware.ErrMessageMiddlewareDisconnected
 	}
 	if err := e.Channel.Cancel(e.ConsumerTag, false); err != nil {
 		if e.Channel.IsClosed() {
-			return ErrMessageMiddlewareDisconnected
+			return middleware.ErrMessageMiddlewareDisconnected
 		}
-		return ErrMessageMiddlewareMessage
+		return middleware.ErrMessageMiddlewareMessage
 	}
 	return nil
 }
 
-func (e *ExchangeMiddleware) Send(msg Message) error {
+func (e *ExchangeMiddleware) Send(msg middleware.Message) error {
 	if e.Channel.IsClosed() {
-		return ErrMessageMiddlewareDisconnected
+		return middleware.ErrMessageMiddlewareDisconnected
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -148,7 +141,7 @@ func (e *ExchangeMiddleware) Send(msg Message) error {
 				Body:        []byte(msg.Body),
 			})
 		if err != nil {
-			return ErrMessageMiddlewareMessage
+			return middleware.ErrMessageMiddlewareMessage
 		}
 	}
 	return nil
@@ -157,11 +150,11 @@ func (e *ExchangeMiddleware) Send(msg Message) error {
 func (e *ExchangeMiddleware) Close() error {
 	err := e.Channel.Close()
 	if err != nil {
-		return ErrMessageMiddlewareClose
+		return middleware.ErrMessageMiddlewareClose
 	}
 	err = e.Connection.Close()
 	if err != nil {
-		return ErrMessageMiddlewareClose
+		return middleware.ErrMessageMiddlewareClose
 	}
 	return nil
 }

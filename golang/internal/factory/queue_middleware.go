@@ -1,10 +1,11 @@
-package middleware
+package factory
 
 import (
 	"context"
 	"errors"
 	"time"
 
+	"github.com/7574-sistemas-distribuidos/tp-mom/golang/internal/middleware"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
@@ -18,10 +19,8 @@ type WorkQueueMiddleware struct {
 func NewWorkQueueMiddleware(queueName string, conn *amqp.Connection, channel *amqp.Channel) (*WorkQueueMiddleware, error) {
 	_, err := channel.QueueDeclare(queueName, true, false, false, false, nil)
 	if err != nil {
-		connErr := conn.Close()
-		chErr := channel.Close()
-		err = errors.Join(err, connErr, chErr)
-		return nil, err
+		closeErr := closeResources(conn, channel)
+		return nil, errors.Join(err, closeErr)
 	}
 
 	err = channel.Qos(
@@ -30,10 +29,8 @@ func NewWorkQueueMiddleware(queueName string, conn *amqp.Connection, channel *am
 		GLOBAL,
 	)
 	if err != nil {
-		connErr := conn.Close()
-		chErr := channel.Close()
-		err = errors.Join(err, connErr, chErr)
-		return nil, err
+		closeErr := closeResources(conn, channel)
+		return nil, errors.Join(err, closeErr)
 	}
 	return &WorkQueueMiddleware{
 		QueueName:   queueName,
@@ -43,12 +40,12 @@ func NewWorkQueueMiddleware(queueName string, conn *amqp.Connection, channel *am
 	}, nil
 }
 
-func (q *WorkQueueMiddleware) StartConsuming(callbackFunc func(msg Message, ack func(), nack func())) error {
+func (q *WorkQueueMiddleware) StartConsuming(callbackFunc func(msg middleware.Message, ack func(), nack func())) error {
 	if q.Connection.IsClosed() {
-		return ErrMessageMiddlewareDisconnected
+		return middleware.ErrMessageMiddlewareDisconnected
 	}
 	if q.Channel.IsClosed() {
-		return ErrMessageMiddlewareMessage
+		return middleware.ErrMessageMiddlewareMessage
 	}
 	msgs, err := q.Channel.Consume(
 		q.QueueName,
@@ -60,11 +57,11 @@ func (q *WorkQueueMiddleware) StartConsuming(callbackFunc func(msg Message, ack 
 		nil,
 	)
 	if err != nil {
-		return ErrMessageMiddlewareMessage
+		return middleware.ErrMessageMiddlewareMessage
 	}
 
 	for d := range msgs {
-		msg := Message{Body: string(d.Body)}
+		msg := middleware.Message{Body: string(d.Body)}
 		ack := func() {
 			err := d.Ack(false)
 			if err != nil {
@@ -84,20 +81,20 @@ func (q *WorkQueueMiddleware) StartConsuming(callbackFunc func(msg Message, ack 
 
 func (q *WorkQueueMiddleware) StopConsuming() error {
 	if q.Connection.IsClosed() {
-		return ErrMessageMiddlewareDisconnected
+		return middleware.ErrMessageMiddlewareDisconnected
 	}
 	if err := q.Channel.Cancel(q.ConsumerTag, false); err != nil {
 		if q.Channel.IsClosed() {
-			return ErrMessageMiddlewareDisconnected
+			return middleware.ErrMessageMiddlewareDisconnected
 		}
-		return ErrMessageMiddlewareMessage
+		return middleware.ErrMessageMiddlewareMessage
 	}
 	return nil
 }
 
-func (q *WorkQueueMiddleware) Send(msg Message) error {
+func (q *WorkQueueMiddleware) Send(msg middleware.Message) error {
 	if q.Channel.IsClosed() {
-		return ErrMessageMiddlewareDisconnected
+		return middleware.ErrMessageMiddlewareDisconnected
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -114,7 +111,7 @@ func (q *WorkQueueMiddleware) Send(msg Message) error {
 			Body:         []byte(msg.Body),
 		})
 	if err != nil {
-		return ErrMessageMiddlewareMessage
+		return middleware.ErrMessageMiddlewareMessage
 	}
 	return nil
 }
@@ -122,11 +119,11 @@ func (q *WorkQueueMiddleware) Send(msg Message) error {
 func (q *WorkQueueMiddleware) Close() error {
 	err := q.Channel.Close()
 	if err != nil {
-		return ErrMessageMiddlewareClose
+		return middleware.ErrMessageMiddlewareClose
 	}
 	err = q.Connection.Close()
 	if err != nil {
-		return ErrMessageMiddlewareClose
+		return middleware.ErrMessageMiddlewareClose
 	}
 	return nil
 }

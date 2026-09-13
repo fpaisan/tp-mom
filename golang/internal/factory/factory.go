@@ -17,7 +17,7 @@ func CreateQueueMiddleware(queueName string, connectionSettings m.ConnSettings) 
 	if err != nil {
 		return nil, err
 	}
-	middleware, err := m.NewWorkQueueMiddleware(queueName, conn, channel)
+	middleware, err := NewWorkQueueMiddleware(queueName, conn, channel)
 	if err != nil {
 		return nil, err
 	}
@@ -29,7 +29,7 @@ func CreateExchangeMiddleware(exchange string, keys []string, connectionSettings
 	if err != nil {
 		return nil, err
 	}
-	middleware, err := m.NewExchangeMiddleware(exchange, keys, conn, channel)
+	middleware, err := NewExchangeMiddleware(exchange, keys, conn, channel)
 	if err != nil {
 		return nil, err
 	}
