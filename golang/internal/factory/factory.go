@@ -8,10 +8,6 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-var (
-	ErrMessageMiddlewareConnect = errors.New("message middleware: connect error")
-)
-
 func CreateQueueMiddleware(queueName string, connectionSettings m.ConnSettings) (m.Middleware, error) {
 	conn, channel, err := connect(connectionSettings)
 	if err != nil {
@@ -40,16 +36,17 @@ func connect(connectionSettings m.ConnSettings) (*amqp.Connection, *amqp.Channel
 	url := fmt.Sprintf("amqp://guest:guest@%s:%d/", connectionSettings.Hostname, connectionSettings.Port)
 	conn, err := amqp.Dial(url)
 	if err != nil {
-		return nil, nil, ErrMessageMiddlewareConnect
+		return nil, nil, m.ErrMessageMiddlewareMessage
 	}
 	channel, err := conn.Channel()
 	if err != nil {
-		closeErr := conn.Close()
-		if closeErr != nil {
-			closeErr = ErrMessageMiddlewareConnect
+		connErr := closeConnection(conn)
+		if connErr != nil {
+			if errors.Is(connErr, amqp.ErrClosed) {
+				return nil, nil, m.ErrMessageMiddlewareMessage
+			}
+			return nil, nil, errors.Join(m.ErrMessageMiddlewareMessage, connErr)
 		}
-		err = errors.Join(err, closeErr)
-		return nil, nil, err
 	}
 	return conn, channel, nil
 }

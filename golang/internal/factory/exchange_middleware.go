@@ -1,9 +1,7 @@
 package factory
 
 import (
-	"context"
 	"errors"
-	"time"
 
 	"github.com/7574-sistemas-distribuidos/tp-mom/golang/internal/middleware"
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -16,6 +14,7 @@ type ExchangeMiddleware struct {
 	Channel     *amqp.Channel
 	QueueName   string
 	ConsumerTag string
+	isConsuming bool
 }
 
 func NewExchangeMiddleware(exchange string, keys []string, conn *amqp.Connection, channel *amqp.Channel) (*ExchangeMiddleware, error) {
@@ -71,40 +70,19 @@ func NewExchangeMiddleware(exchange string, keys []string, conn *amqp.Connection
 }
 
 func (e *ExchangeMiddleware) StartConsuming(callbackFunc func(msg middleware.Message, ack func(), nack func())) error {
+	if e.isConsuming {
+		return middleware.ErrMessageMiddlewareMessage
+	}
 	if e.Connection.IsClosed() {
 		return middleware.ErrMessageMiddlewareDisconnected
 	}
 	if e.Channel.IsClosed() {
 		return middleware.ErrMessageMiddlewareMessage
 	}
-	msgs, err := e.Channel.Consume(
-		e.QueueName,
-		e.ConsumerTag,
-		false,
-		false,
-		false,
-		false,
-		nil,
-	)
-	if err != nil {
-		return middleware.ErrMessageMiddlewareMessage
-	}
-
-	for d := range msgs {
-		msg := middleware.Message{Body: string(d.Body)}
-		ack := func() {
-			err := d.Ack(false)
-			if err != nil {
-				return
-			}
-		}
-		nack := func() {
-			err := d.Nack(false, true)
-			if err != nil {
-				return
-			}
-		}
-		callbackFunc(msg, ack, nack)
+	e.isConsuming = true
+	if err := consumeMessages(e.QueueName, e.Channel, e.QueueName, callbackFunc); err != nil {
+		e.isConsuming = false
+		return err
 	}
 	return nil
 }
@@ -113,35 +91,24 @@ func (e *ExchangeMiddleware) StopConsuming() error {
 	if e.Connection.IsClosed() {
 		return middleware.ErrMessageMiddlewareDisconnected
 	}
-	if err := e.Channel.Cancel(e.ConsumerTag, false); err != nil {
-		if e.Channel.IsClosed() {
-			return middleware.ErrMessageMiddlewareDisconnected
-		}
-		return middleware.ErrMessageMiddlewareMessage
+	if !e.isConsuming {
+		return nil
 	}
-	return nil
+
+	return cancelChannel(e.QueueName, e.Channel)
 }
 
 func (e *ExchangeMiddleware) Send(msg middleware.Message) error {
 	if e.Channel.IsClosed() {
 		return middleware.ErrMessageMiddlewareDisconnected
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	if e.Connection.IsClosed() {
+		return middleware.ErrMessageMiddlewareDisconnected
+	}
 
 	for _, key := range e.bindings {
-		err := e.Channel.PublishWithContext(ctx,
-			e.exchange,
-			key,
-			false,
-			false,
-			amqp.Publishing{
-				ContentType: "text/plain",
-				Body:        []byte(msg.Body),
-			})
-		if err != nil {
-			return middleware.ErrMessageMiddlewareMessage
+		if err := publish(e.Channel, e.exchange, key, msg.Body); err != nil {
+			return err
 		}
 	}
 	return nil
