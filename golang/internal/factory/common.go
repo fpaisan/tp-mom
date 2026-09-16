@@ -71,3 +71,11 @@ func publish(channel *amqp.Channel, exchange string, routingKey, body string) er
 	}
 	return nil
 }
+
+func queueDeclare(channel *amqp.Channel, name string, durable bool, exclusive bool) (string, error) {
+	queue, err := channel.QueueDeclare(name, durable, false, exclusive, false, nil)
+	if err != nil {
+		return "", err
+	}
+	return queue.Name, err
+}

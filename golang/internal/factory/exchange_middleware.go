@@ -22,23 +22,14 @@ func NewExchangeMiddleware(exchange string, keys []string, conn *amqp.Connection
 		closeErr := closeResources(conn, channel)
 		return nil, errors.Join(err, closeErr)
 	}
-
-	queue, err := channel.QueueDeclare(
-		DEFAULT_QUEUE_NAME,
-		false,
-		false,
-		true,
-		false,
-		nil,
-	)
+	queueName, err := queueDeclare(channel, DEFAULT_QUEUE_NAME, EXCHANGE_QUEUE_DURABILITY, EXCHANGE_QUEUE_EXCLUSIVITY)
 	if err != nil {
 		closeErr := closeResources(conn, channel)
 		return nil, errors.Join(err, closeErr)
 	}
-
 	for _, key := range keys {
 		err = channel.QueueBind(
-			queue.Name,
+			queueName,
 			key,
 			exchange,
 			false,
@@ -53,7 +44,7 @@ func NewExchangeMiddleware(exchange string, keys []string, conn *amqp.Connection
 		bindings:   keys,
 		Connection: conn,
 		Channel:    channel,
-		QueueName:  queue.Name,
+		QueueName:  queueName,
 	}, nil
 }
 

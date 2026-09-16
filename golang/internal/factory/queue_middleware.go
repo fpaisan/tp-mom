@@ -15,7 +15,7 @@ type WorkQueueMiddleware struct {
 }
 
 func NewWorkQueueMiddleware(queueName string, conn *amqp.Connection, channel *amqp.Channel) (*WorkQueueMiddleware, error) {
-	_, err := channel.QueueDeclare(queueName, true, false, false, false, nil)
+	_, err := queueDeclare(channel, queueName, WORK_QUEUE_DURABILITY, WORK_QUEUE_EXCLUSIVITY)
 	if err != nil {
 		closeErr := closeResources(conn, channel)
 		return nil, errors.Join(err, closeErr)
