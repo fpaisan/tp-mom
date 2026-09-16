@@ -36,17 +36,31 @@ func connect(connectionSettings m.ConnSettings) (*amqp.Connection, *amqp.Channel
 	url := fmt.Sprintf("amqp://guest:guest@%s:%d/", connectionSettings.Hostname, connectionSettings.Port)
 	conn, err := amqp.Dial(url)
 	if err != nil {
-		return nil, nil, m.ErrMessageMiddlewareMessage
+		return nil, nil, m.ErrMessageMiddlewareDisconnected
 	}
 	channel, err := conn.Channel()
 	if err != nil {
-		connErr := closeConnection(conn)
-		if connErr != nil {
-			if errors.Is(connErr, amqp.ErrClosed) {
-				return nil, nil, m.ErrMessageMiddlewareMessage
+		closeErr := closeConnection(conn)
+		if errors.Is(err, amqp.ErrClosed) {
+			if closeErr != nil {
+				return nil, nil, errors.Join(m.ErrMessageMiddlewareDisconnected, closeErr)
 			}
-			return nil, nil, errors.Join(m.ErrMessageMiddlewareMessage, connErr)
+			return nil, nil, m.ErrMessageMiddlewareDisconnected
 		}
+		if closeErr != nil {
+			return nil, nil, errors.Join(m.ErrMessageMiddlewareMessage, closeErr)
+		}
+		return nil, nil, m.ErrMessageMiddlewareMessage
 	}
 	return conn, channel, nil
+}
+
+func closeConnection(conn *amqp.Connection) error {
+	if !conn.IsClosed() {
+		connErr := conn.Close()
+		if connErr != nil {
+			return m.ErrMessageMiddlewareClose
+		}
+	}
+	return nil
 }

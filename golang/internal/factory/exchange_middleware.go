@@ -13,22 +13,11 @@ type ExchangeMiddleware struct {
 	Connection  *amqp.Connection
 	Channel     *amqp.Channel
 	QueueName   string
-	ConsumerTag string
 	isConsuming bool
 }
 
 func NewExchangeMiddleware(exchange string, keys []string, conn *amqp.Connection, channel *amqp.Channel) (*ExchangeMiddleware, error) {
-	err := channel.ExchangeDeclare(exchange, DIRECT_EXCHANGE, false, false, false, false, nil)
-	if err != nil {
-		closeErr := closeResources(conn, channel)
-		return nil, errors.Join(err, closeErr)
-	}
-
-	err = channel.Qos(
-		PREFETCH_COUNT,
-		PREFETCH_SIZE,
-		GLOBAL,
-	)
+	err := channel.ExchangeDeclare(exchange, DIRECT_EXCHANGE, true, false, false, false, nil)
 	if err != nil {
 		closeErr := closeResources(conn, channel)
 		return nil, errors.Join(err, closeErr)
@@ -36,7 +25,7 @@ func NewExchangeMiddleware(exchange string, keys []string, conn *amqp.Connection
 
 	queue, err := channel.QueueDeclare(
 		DEFAULT_QUEUE_NAME,
-		true,
+		false,
 		false,
 		true,
 		false,
@@ -60,12 +49,11 @@ func NewExchangeMiddleware(exchange string, keys []string, conn *amqp.Connection
 		}
 	}
 	return &ExchangeMiddleware{
-		exchange:    exchange,
-		bindings:    keys,
-		Connection:  conn,
-		Channel:     channel,
-		QueueName:   queue.Name,
-		ConsumerTag: "consumer-" + exchange,
+		exchange:   exchange,
+		bindings:   keys,
+		Connection: conn,
+		Channel:    channel,
+		QueueName:  queue.Name,
 	}, nil
 }
 
@@ -84,6 +72,9 @@ func (e *ExchangeMiddleware) StartConsuming(callbackFunc func(msg middleware.Mes
 		e.isConsuming = false
 		return err
 	}
+	if e.isConsuming {
+		return middleware.ErrMessageMiddlewareDisconnected
+	}
 	return nil
 }
 
@@ -94,7 +85,7 @@ func (e *ExchangeMiddleware) StopConsuming() error {
 	if !e.isConsuming {
 		return nil
 	}
-
+	e.isConsuming = false
 	return cancelChannel(e.QueueName, e.Channel)
 }
 
@@ -115,12 +106,7 @@ func (e *ExchangeMiddleware) Send(msg middleware.Message) error {
 }
 
 func (e *ExchangeMiddleware) Close() error {
-	err := e.Channel.Close()
-	if err != nil {
-		return middleware.ErrMessageMiddlewareClose
-	}
-	err = e.Connection.Close()
-	if err != nil {
+	if err := closeResources(e.Connection, e.Channel); err != nil {
 		return middleware.ErrMessageMiddlewareClose
 	}
 	return nil

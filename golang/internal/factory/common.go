@@ -13,16 +13,6 @@ func closeResources(conn *amqp.Connection, channel *amqp.Channel) error {
 	return errors.Join(connErr, chErr)
 }
 
-func closeConnection(conn *amqp.Connection) error {
-	if !conn.IsClosed() {
-		connErr := conn.Close()
-		if connErr != nil {
-			return m.ErrMessageMiddlewareClose
-		}
-	}
-	return nil
-}
-
 func consumeMessages(queueName string, channel *amqp.Channel, consumerTag string, callbackFunc func(msg m.Message, ack func(), nack func())) error {
 	msgs, err := channel.Consume(
 		queueName,
@@ -34,7 +24,7 @@ func consumeMessages(queueName string, channel *amqp.Channel, consumerTag string
 		nil,
 	)
 	if err != nil {
-		return err
+		return m.ErrMessageMiddlewareMessage
 	}
 	for d := range msgs {
 		msg := m.Message{Body: string(d.Body)}

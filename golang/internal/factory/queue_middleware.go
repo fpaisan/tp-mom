@@ -51,6 +51,9 @@ func (q *WorkQueueMiddleware) StartConsuming(callbackFunc func(msg middleware.Me
 		q.isConsuming = false
 		return err
 	}
+	if q.isConsuming {
+		return middleware.ErrMessageMiddlewareDisconnected
+	}
 	return nil
 }
 
@@ -61,8 +64,8 @@ func (q *WorkQueueMiddleware) StopConsuming() error {
 	if !q.isConsuming {
 		return nil
 	}
+	q.isConsuming = false
 	return cancelChannel(q.QueueName, q.Channel)
-
 }
 
 func (q *WorkQueueMiddleware) Send(msg middleware.Message) error {
@@ -76,12 +79,7 @@ func (q *WorkQueueMiddleware) Send(msg middleware.Message) error {
 }
 
 func (q *WorkQueueMiddleware) Close() error {
-	err := q.Channel.Close()
-	if err != nil {
-		return middleware.ErrMessageMiddlewareClose
-	}
-	err = q.Connection.Close()
-	if err != nil {
+	if err := closeResources(q.Connection, q.Channel); err != nil {
 		return middleware.ErrMessageMiddlewareClose
 	}
 	return nil
