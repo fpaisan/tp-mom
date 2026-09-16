@@ -49,14 +49,9 @@ func NewExchangeMiddleware(exchange string, keys []string, conn *amqp.Connection
 }
 
 func (e *ExchangeMiddleware) StartConsuming(callbackFunc func(msg middleware.Message, ack func(), nack func())) error {
-	if e.isConsuming {
-		return middleware.ErrMessageMiddlewareMessage
-	}
-	if e.Connection.IsClosed() {
-		return middleware.ErrMessageMiddlewareDisconnected
-	}
-	if e.Channel.IsClosed() {
-		return middleware.ErrMessageMiddlewareMessage
+	err := checkResources(e.isConsuming, e.Connection, e.Channel)
+	if err != nil {
+		return err
 	}
 	e.isConsuming = true
 	if err := consumeMessages(e.QueueName, e.Channel, e.QueueName, callbackFunc); err != nil {

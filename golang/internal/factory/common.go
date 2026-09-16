@@ -79,3 +79,16 @@ func queueDeclare(channel *amqp.Channel, name string, durable bool, exclusive bo
 	}
 	return queue.Name, err
 }
+
+func checkResources(isConsuming bool, connection *amqp.Connection, channel *amqp.Channel) error {
+	if isConsuming {
+		return m.ErrMessageMiddlewareMessage
+	}
+	if connection.IsClosed() {
+		return m.ErrMessageMiddlewareDisconnected
+	}
+	if channel.IsClosed() {
+		return m.ErrMessageMiddlewareMessage
+	}
+	return nil
+}

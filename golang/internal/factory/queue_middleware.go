@@ -37,14 +37,9 @@ func NewWorkQueueMiddleware(queueName string, conn *amqp.Connection, channel *am
 }
 
 func (q *WorkQueueMiddleware) StartConsuming(callbackFunc func(msg middleware.Message, ack func(), nack func())) error {
-	if q.isConsuming {
-		return middleware.ErrMessageMiddlewareMessage
-	}
-	if q.Connection.IsClosed() {
-		return middleware.ErrMessageMiddlewareDisconnected
-	}
-	if q.Channel.IsClosed() {
-		return middleware.ErrMessageMiddlewareMessage
+	err := checkResources(q.isConsuming, q.Connection, q.Channel)
+	if err != nil {
+		return err
 	}
 	q.isConsuming = true
 	if err := consumeMessages(q.QueueName, q.Channel, q.QueueName, callbackFunc); err != nil {
