@@ -22,29 +22,12 @@ func NewExchangeMiddleware(exchange string, keys []string, conn *amqp.Connection
 		closeErr := closeResources(conn, channel)
 		return nil, errors.Join(err, closeErr)
 	}
-	queueName, err := queueDeclare(channel, DEFAULT_QUEUE_NAME, EXCHANGE_QUEUE_DURABILITY, EXCHANGE_QUEUE_EXCLUSIVITY)
-	if err != nil {
-		closeErr := closeResources(conn, channel)
-		return nil, errors.Join(err, closeErr)
-	}
-	for _, key := range keys {
-		err = channel.QueueBind(
-			queueName,
-			key,
-			exchange,
-			false,
-			nil)
-		if err != nil {
-			closeErr := closeResources(conn, channel)
-			return nil, errors.Join(err, closeErr)
-		}
-	}
+
 	return &ExchangeMiddleware{
 		exchange:   exchange,
 		bindings:   keys,
 		Connection: conn,
 		Channel:    channel,
-		QueueName:  queueName,
 	}, nil
 }
 
@@ -52,6 +35,28 @@ func (e *ExchangeMiddleware) StartConsuming(callbackFunc func(msg middleware.Mes
 	err := checkResources(e.isConsuming, e.Connection, e.Channel)
 	if err != nil {
 		return err
+	}
+	queueName, err := queueDeclare(e.Channel, DEFAULT_QUEUE_NAME, EXCHANGE_QUEUE_DURABILITY, EXCHANGE_QUEUE_EXCLUSIVITY)
+	if err != nil {
+		if e.Channel.IsClosed() {
+			return middleware.ErrMessageMiddlewareDisconnected
+		}
+		return middleware.ErrMessageMiddlewareMessage
+	}
+	e.QueueName = queueName
+	for _, key := range e.bindings {
+		err = e.Channel.QueueBind(
+			queueName,
+			key,
+			e.exchange,
+			false,
+			nil)
+		if err != nil {
+			if e.Channel.IsClosed() {
+				return middleware.ErrMessageMiddlewareDisconnected
+			}
+			return middleware.ErrMessageMiddlewareMessage
+		}
 	}
 	e.isConsuming = true
 	if err := consumeMessages(e.QueueName, e.Channel, e.QueueName, callbackFunc); err != nil {

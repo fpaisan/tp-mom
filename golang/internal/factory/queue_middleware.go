@@ -20,15 +20,6 @@ func NewWorkQueueMiddleware(queueName string, conn *amqp.Connection, channel *am
 		closeErr := closeResources(conn, channel)
 		return nil, errors.Join(err, closeErr)
 	}
-	err = channel.Qos(
-		PREFETCH_COUNT,
-		PREFETCH_SIZE,
-		GLOBAL,
-	)
-	if err != nil {
-		closeErr := closeResources(conn, channel)
-		return nil, errors.Join(err, closeErr)
-	}
 	return &WorkQueueMiddleware{
 		QueueName:  queueName,
 		Connection: conn,
@@ -40,6 +31,17 @@ func (q *WorkQueueMiddleware) StartConsuming(callbackFunc func(msg middleware.Me
 	err := checkResources(q.isConsuming, q.Connection, q.Channel)
 	if err != nil {
 		return err
+	}
+	err = q.Channel.Qos(
+		PREFETCH_COUNT,
+		PREFETCH_SIZE,
+		GLOBAL,
+	)
+	if err != nil {
+		if q.Channel.IsClosed() {
+			return middleware.ErrMessageMiddlewareDisconnected
+		}
+		return middleware.ErrMessageMiddlewareMessage
 	}
 	q.isConsuming = true
 	if err := consumeMessages(q.QueueName, q.Channel, q.QueueName, callbackFunc); err != nil {
